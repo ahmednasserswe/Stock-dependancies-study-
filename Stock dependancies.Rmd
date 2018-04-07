@@ -1,0 +1,167 @@
+---
+title: "StatsHW3"
+External Collaborators: Some code was reused from last year hw03 solution of group3
+  (Ahmed Mostafa has been part of this group)
+output:
+  html_document: default
+Authors/Collaborators: Ahmed Mostafa, Hamed Asadollahi, Mostafa Awid
+---
+
+## Stock, Dependency and Graphs
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+The sectors we use and the stocks we consider for each sector. In total we consider 7 sectors and 5 stocks for each sector.
+```{r, message=FALSE, warning=FALSE}
+# Consumer Staples
+Consumer.Staples <-c("PG","KO","CL","MO","WMT")
+# Energy
+Energy <-c("XOM","CVX","SLB","EOG","PXD")
+# Financials
+Financials <-c("BRK-B","JPM","WFC","BAC","C")
+# Health Care
+Health.Care <-c("JNJ","PFE","MRK","UNH","AMGN")
+# Real Estate
+Real.Estate <-c("SPG","AMT","PSA","CCI","PLD")
+# Technology
+Technology <-c("AAPL","MSFT","FB","T","GOOGL")
+# Utilities
+Utilities <-c("ED","PEG","XEL","WEC","DTE")
+```
+
+We consider as period of study the first eleven months of 2017.
+```{r, message=FALSE, warning=FALSE}
+StartDate <- "2017-01-01"
+EndDate <- "2017-12-01"
+```
+
+Here we dowload the data:
+```{r, message=FALSE, warning=FALSE}
+library(quantmod)
+Symbols <- c( Financials, Real.Estate, Energy, Consumer.Staples,Technology, Utilities,Health.Care)
+Stocks = lapply(Symbols[1], function(sym) {
+  dailyReturn(na.omit(getSymbols(sym, from=StartDate, to=EndDate, auto.assign=FALSE)), type='log')
+})
+tot <- do.call(merge, Stocks)
+
+for( i in 2:length(Symbols)){
+Stocks = lapply(Symbols[i], function(sym) {
+  dailyReturn(na.omit(getSymbols(sym, from=StartDate, to=EndDate, auto.assign=FALSE)), type='log')
+})
+res <- do.call(merge, Stocks)
+tot <- merge(tot, res)
+} 
+
+```
+
+
+The main part:
+```{r, message=FALSE, warning=FALSE}
+apply_association_measure <- function(method,bootstrap_size,e) {
+R <- cor(tot, tot, method = method)
+n=nrow(R)
+
+
+totNCol <- ncol(tot)
+totNRow <- nrow(tot)
+
+# Sample size
+B <- bootstrap_size # Bootstrap size
+R.boot <- array(NA, dim = c(B,totNCol,totNCol)) # Init
+for (b in 1:B){
+  x.boot<-matrix(NA,ncol = totNCol,nrow = totNRow)
+  idx <- sample(1:totNRow, replace = T)
+  for (i in 1:totNRow){
+    x.boot[i,] <- tot[idx[i],]
+  }
+R.boot[b,,]<-cor(x.boot,x.boot, method = method)
+}
+
+delta = rep(NA,B)
+
+for (b in 1:B){
+  delta[b] = sqrt(totNCol)*max(abs(R.boot[b,,]-R))
+ 
+}
+
+Fn = ecdf(delta)
+
+inverse = function (f, lower = -100, upper = 100) {
+  function (y) uniroot((function (x) f(x) - y), lower = lower, upper = upper)[1]
+}
+Fn_Inv = inverse(Fn, -100,100)
+t = as.numeric(Fn_Inv(0.05))
+
+ConfIntL = matrix(NA,ncol = totNCol, nrow = totNCol)
+ConfIntH = matrix(NA,ncol = totNCol, nrow = totNCol)
+for (i in 1:totNCol){
+  for (j in 1:totNCol){
+    ConfIntL[i,j] = R[i,j] - t/sqrt(totNCol)
+    ConfIntH[i,j] = R[i,j] + t/sqrt(totNCol)
+  }
+  
+}
+
+
+#### creating the graph
+connection = c()
+#e = 0.2
+for (i in 1:totNCol){
+  for (j in 1:totNCol){
+    if (i> j){
+      if ((ConfIntL[i,j] > e) | (ConfIntH [i,j] < -e)) {
+        connection = c(connection,i,j)
+      }
+    } 
+  }
+}
+
+library(igraph)
+set.seed(100)
+graph.nondirected <- graph(connection, directed=FALSE)
+colorss <- c("red", "blue", "gold", "green", "purple", "orchid1", "lightsalmon")
+
+for( j in 1:5){
+  V(graph.nondirected)$color[j] <- colorss[1] 
+}
+for( j in 6:10){
+  V(graph.nondirected)$color[j] <- colorss[2]
+}
+for( j in 11:15){
+  V(graph.nondirected)$color[j] <- colorss[3]
+}
+for( j in 16:20){
+  V(graph.nondirected)$color[j] <- colorss[4]
+}
+for( j in 21:25){
+  V(graph.nondirected)$color[j] <- colorss[5]
+}
+for( j in 26:30){
+  V(graph.nondirected)$color[j] <- colorss[6]
+}
+for( j in 31:35){
+  V(graph.nondirected)$color[j] <- colorss[7]
+}
+plot(graph.nondirected,main=method, sub=paste0("Usingg e =", e))
+labels = paste("label", 1:length(colorss))
+Symbols_list <- c( "Financials", "Real Estate", "Energy", "Consumer Staples","Technology", "Utilities","Health Care")
+legend(-2.5,1,legend=Symbols_list, col=colorss, pch=19, title="Legend",bty ="n")
+}
+```
+
+Using both Pearson and Kendall to build the graph:
+```{r, message=FALSE, warning=FALSE}
+bootstrapSize = 500
+#Using different e values
+apply_association_measure("pearson",bootstrapSize,0.25)
+apply_association_measure("kendall",bootstrapSize,0.25)
+
+
+#Using different e values
+apply_association_measure("pearson",bootstrapSize,0.35)
+apply_association_measure("kendall",bootstrapSize,0.35)
+
+```
+We can notice that stocks from a given sector are correlated and cluster together. We can also notice that some sectors tend to cluster with others too; for istance we can see that Financials and Energy tend to cluster together. We can also notice that using kendall lead to more "exclusive" cluster between the sectors with only themselves (maybe because Pearson correlation is not very robust to outliers)
+
+
